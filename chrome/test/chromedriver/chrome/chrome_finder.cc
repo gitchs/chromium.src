@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/callback.h"
@@ -14,6 +15,7 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "build/build_config.h"
+#include "base/command_line.h"//to get args from command line
 
 #if defined(OS_WIN)
 #include "base/base_paths_win.h"
@@ -81,6 +83,23 @@ bool FindExe(
 void GetApplicationDirs(std::vector<base::FilePath>* locations);
 #endif
 
+
+
+
+
+#if defined(OS_WIN)
+  // The native command line string type.
+  typedef std::wstring StringType;
+#elif defined(OS_POSIX)
+  typedef std::string StringType;
+#endif
+  typedef StringType::value_type CharType;
+  typedef std::vector<StringType> StringVector;
+  typedef std::map<std::string, StringType> SwitchMap;
+
+
+StringType GetNwPathFromArgs(StringVector& av);
+
 bool FindChrome(base::FilePath* browser_exe) {
 #if defined(OS_WIN)
   base::FilePath browser_exes_array[] = {
@@ -95,11 +114,26 @@ bool FindChrome(base::FilePath* browser_exe) {
       base::FilePath("nw")
   };
 #endif
-  std::vector<base::FilePath> browser_exes(
-      browser_exes_array, browser_exes_array + arraysize(browser_exes_array));
+
   std::vector<base::FilePath> locations;
   base::FilePath exe_path;
-  PathService::Get(base::DIR_EXE, &exe_path);
+
+  CommandLine *cl =  CommandLine::ForCurrentProcess();
+  StringVector av = cl->argv();
+  StringType nw_path = GetNwPathFromArgs(av);
+  if (nw_path.size() == 0){
+    PathService::Get(base::DIR_EXE, &exe_path);
+  } else {
+#if defined(OS_WIN)
+    browser_exes_array[0] = base::FilePath(L"");
+#else
+    browser_exes_array[0] = base::FilePath("");
+#endif
+    exe_path = base::FilePath(nw_path);
+  }
+
+  std::vector<base::FilePath> browser_exes(
+      browser_exes_array, browser_exes_array + arraysize(browser_exes_array));
   locations.push_back(exe_path);
   return internal::FindExe(
       base::Bind(&base::PathExists),
@@ -107,3 +141,33 @@ bool FindChrome(base::FilePath* browser_exe) {
       locations,
       browser_exe);
 }
+
+StringType GetNwPathFromArgs(StringVector& av){
+  //check if --nw-path in args,
+  //if true return --nw-path value,
+  //else return an empty string
+  //only first --nw-path valid,ignore others
+#if defined(OS_WIN)
+  StringType retval(L"");
+#else
+  StringType retval("");
+#endif
+  StringVector::iterator avi = av.begin();
+  StringVector::iterator avi_end = av.end();
+  while (avi != avi_end){
+#if defined(OS_WIN)
+    std::size_t nw_path_index = avi->find(L"--nw-path=");
+#else
+    std::size_t nw_path_index = avi->find("--nw-path=");
+#endif
+    if (nw_path_index !=0){
+      ++avi;
+      continue;
+    } else {
+      retval = avi->substr(nw_path_index+10);
+      break;
+    }
+  }
+  return retval;
+}
+
